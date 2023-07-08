@@ -2,15 +2,16 @@ import { Router } from "express";
 import fs, { PathOrFileDescriptor } from "fs";
 import path from "path";
 const router = Router();
+import { v4 as uuidv4 } from "uuid";
 
 router.post("/matches", (req, res) => {
-  const { title, location, date, time } = req.body;
+  const { titulo, local, data, hora } = req.body;
 
   const match = {
-    title,
-    location,
-    date,
-    time,
+    titulo,
+    local,
+    data,
+    hora,
     attendance: [],
   };
   const data_file = fs.readFileSync(
@@ -19,10 +20,8 @@ router.post("/matches", (req, res) => {
   );
   const matchesData = JSON.parse(data_file);
 
-  // Adicione a nova partida aos dados existentes
-  matchesData.push(match);
+  matchesData.push({ ...match, id: uuidv4() });
 
-  // Salve os dados atualizados no arquivo JSON
   fs.writeFileSync(
     path.join(__dirname, "../db/matchers.json"),
     JSON.stringify(matchesData)
@@ -31,48 +30,102 @@ router.post("/matches", (req, res) => {
   res.json(match);
 });
 
+router.delete("/matches/:id/attendance", (req, res) => {
+  const matchId = req.params.id;
+  const { player } = req.body;
+  const data_file = fs.readFileSync(
+    path.join(__dirname, "../db/matchers.json"),
+    "utf8"
+  );
+  const matchesData = JSON.parse(data_file);
+
+  const match = matchesData.find((match) => match.id === matchId);
+  if (!match) {
+    res.status(404).json({ error: "Partida não encontrada." });
+    return;
+  }
+
+  const timeAzul = match.attendance.timeAzul;
+  const timeVermelho = match.attendance.timeVermelho;
+
+  // Verifica e remove do time azul
+  for (let j = 0; j < timeAzul.length; j++) {
+    if (timeAzul[j].nome === player) {
+      timeAzul.splice(j, 1);
+      console.log(
+        `O jogador ${player} foi removido do time azul na partida ${match.titulo}`
+      );
+      fs.writeFileSync(
+        path.join(__dirname, "../db/matchers.json"),
+        JSON.stringify(matchesData)
+      );
+
+      res.json(match);
+      return;
+    }
+  }
+
+  // Verifica e remove do time vermelho
+  for (let k = 0; k < timeVermelho.length; k++) {
+    if (timeVermelho[k].nome === player) {
+      timeVermelho.splice(k, 1);
+      console.log(
+        `O jogador ${player} foi removido do time vermelho na partida ${match.titulo}`
+      );
+      fs.writeFileSync(
+        path.join(__dirname, "../db/matchers.json"),
+        JSON.stringify(matchesData)
+      );
+
+      res.json(match);
+      return;
+    }
+  }
+});
+
 router.put("/matches/:id/attendance", (req, res) => {
-  // Obtenha o ID da partida a partir dos parâmetros da URL
   const matchId = req.params.id;
 
-  // Obtenha os dados do jogador e seu telefone do corpo da requisição
-  const { player, phone } = req.body;
+  const jogadores = req.body;
+  console.log("lista de jogadores =>", jogadores);
 
   const data_file = fs.readFileSync(
     path.join(__dirname, "../db/matchers.json"),
     "utf8"
   );
   const matchesData = JSON.parse(data_file);
-  // Encontre a partida correspondente pelo ID
   const match = matchesData.find((match) => match.id === matchId);
-
+  console.log("match finded", match);
   if (!match) {
-    // Caso a partida não seja encontrada, envie uma resposta de erro
     res.status(404).json({ error: "Partida não encontrada." });
     return;
   }
+  match.attendance = jogadores;
 
-  // Adicione ou remova o jogador da lista de presença
-  const attendance = match.attendance;
-  const playerIndex = attendance.findIndex((entry) => entry.player === player);
+  fs.writeFileSync(
+    path.join(__dirname, "../db/matchers.json"),
+    JSON.stringify(matchesData)
+  );
 
-  if (playerIndex > -1) {
-    // O jogador já está na lista, remova-o
-    attendance.splice(playerIndex, 1);
-  } else {
-    // O jogador não está na lista, adicione-o
-    attendance.push({ player, phone });
-  }
-
-  // Salve os dados atualizados no arquivo JSON
-  fs.writeFileSync("./data/matches.json", JSON.stringify(matchesData));
-
-  // Envie a resposta com os dados atualizados da partida
   res.json(match);
 });
 
+router.get("/matches/", (req, res) => {
+  const data_file = fs.readFileSync(
+    path.join(__dirname, "../db/matchers.json"),
+    "utf8"
+  );
+  const matchesData = JSON.parse(data_file);
+
+  if (!matchesData) {
+    res.status(404).json({ error: "Partidas não encontradas." });
+    return;
+  }
+
+  res.json(matchesData);
+});
+
 router.get("/matches/:id/attendance", (req, res) => {
-  // Obtenha o ID da partida a partir dos parâmetros da URL
   const matchId = req.params.id;
 
   const data_file = fs.readFileSync(
@@ -81,21 +134,17 @@ router.get("/matches/:id/attendance", (req, res) => {
   );
   const matchesData = JSON.parse(data_file);
 
-  // Encontre a partida correspondente pelo ID
   const match = matchesData.find((match) => match.id === matchId);
 
   if (!match) {
-    // Caso a partida não seja encontrada, envie uma resposta de erro
     res.status(404).json({ error: "Partida não encontrada." });
     return;
   }
 
-  // Envie a resposta com os dados da lista de presença da partida
   res.json(match.attendance);
 });
 
 router.delete("/matches/:id", (req, res) => {
-  // Obtenha o ID da partida a partir dos parâmetros da URL
   const matchId = req.params.id;
 
   const data_file = fs.readFileSync(
@@ -104,21 +153,21 @@ router.delete("/matches/:id", (req, res) => {
   );
   const matchesData = JSON.parse(data_file);
 
-  // Encontre o índice da partida correspondente pelo ID
   const matchIndex = matchesData.findIndex((match) => match.id === matchId);
 
   if (matchIndex === -1) {
-    // Caso a partida não seja encontrada, envie uma resposta de erro
     res.status(404).json({ error: "Partida não encontrada." });
     return;
   }
 
-  // Remova a partida do array de partidas
   matchesData.splice(matchIndex, 1);
 
-  // Salve os dados atualizados no arquivo JSON
-  fs.writeFileSync("./data/matches.json", JSON.stringify(matchesData));
+  fs.writeFileSync(
+    path.join(__dirname, "../db/matchers.json"),
+    JSON.stringify(matchesData)
+  );
 
-  // Envie uma resposta de sucesso
   res.json({ success: true });
 });
+
+export { router };
